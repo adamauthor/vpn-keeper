@@ -1,0 +1,28 @@
+# Swift / Xcode
+.build/
+.build-local/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Build outputs and local diagnostics
+dist/
+*.app/
+*.dSYM/
+*.zip
+*.log
+.DS_Store
+
+# Local credentials and authenticator exports
+.env
+.env.*
+!.env.example
+*.keychain
+*.keychain-db
+*.p12
+*.p8
+*.pem
+*.key
+IMG_*
+Screenshot*

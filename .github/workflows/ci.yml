@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Test and build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: x86_64
+          - os: macos-15-arm64
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      VPNKEEPER_BUILD_DIR: ${{ github.workspace }}/.build-local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check scripts and tag
+        shell: bash
+        run: |
+          for script in Scripts/*.sh; do bash -n "$script"; done
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            expected="v$(tr -d '\r\n' < VERSION)"
+            [[ "$GITHUB_REF_NAME" == "$expected" ]] || { echo "Tag must match VERSION" >&2; exit 1; }
+          fi
+      - name: Test
+        run: bash Scripts/test.sh
+      - name: Lint Swift
+        run: xcrun swift-format lint --strict --recursive Sources Tests Package.swift Scripts/Icon.swift
+      - name: Build
+        run: bash Scripts/build.sh
+      - name: Package and verify
+        run: bash Scripts/package.sh "dist/VPN Keeper.app" dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VPNKeeper-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: VPNKeeper-*
+          path: dist
+          merge-multiple: true
+      - name: Prepare release notes
+        run: bash Scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "${RUNNER_TEMP}/release-notes.md"
+      - name: Publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 \
+              --verify-tag --title "VPN Keeper ${GITHUB_REF_NAME#v}" \
+              --notes-file "${RUNNER_TEMP}/release-notes.md"
+          fi
