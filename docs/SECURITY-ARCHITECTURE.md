@@ -23,6 +23,8 @@ flowchart LR
 
 The Keychain item uses `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and disables synchronization. Legacy login-Keychain ACL authorization is also enforced. Background reads disallow interactive prompts. `Always Allow` applies to the trusted installed build; changing an ad-hoc signature may require reauthorization.
 
+Storing the password and the TOTP seed together on one Mac reduces two-factor sign-in to access to that Mac. Read [Before you use it](../README.md#before-you-use-it) and confirm your organization allows it.
+
 ## Credential path
 
 1. Decode the QR locally with Apple Vision.
