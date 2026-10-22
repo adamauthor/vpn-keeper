@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/adamauthor/vpn-keeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adamauthor/vpn-keeper/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/adamauthor/vpn-keeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adamauthor/vpn-keeper/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push"></a>
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-182C38?logo=apple&logoColor=white">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-14B8A6"></a>
