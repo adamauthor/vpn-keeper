@@ -29,6 +29,23 @@
 
 Cisco establishes the VPN tunnel. VPN Keeper controls the installed, signature-checked Cisco CLI. It is an independent community project, not affiliated with Cisco or Google.
 
+## Before you use it
+
+> [!WARNING]
+> **VPN Keeper stores your VPN password and your TOTP seed on the same Mac.**
+> Two-factor authentication is meant to keep the second factor on a separate device. With both stored here, anyone who can use your unlocked Mac, or malware running under your account, can sign in to your VPN without your phone. In practice this turns two-factor sign-in into a single factor: access to this Mac.
+
+**Check your organization's policy first.** Many companies prohibit exporting authenticator secrets or automating one-time codes, and may treat it as bypassing a security control. Use VPN Keeper only where your security team allows it. If you are unsure, ask them before you set it up.
+
+To reduce the risk:
+
+- Use a strong login password and turn on FileVault.
+- Lock your Mac whenever you step away, and set it to lock automatically after a short idle time.
+- Keep the authenticator app on your phone as well, so you can still sign in if this Mac is lost.
+- If this Mac is lost or compromised, reset your VPN password and re-enroll your OTP device with your IT team right away.
+
+VPN Keeper is provided as-is under the MIT license, without warranty. You are responsible for using it in line with your organization's rules.
+
 ## Get started
 
 Requires **macOS 13+** and an installed Cisco Secure Client / AnyConnect with its VPN CLI. The application currently uses a Russian interface; this guide maps the main controls below.
@@ -46,6 +63,8 @@ Close the window and leave the shield in the menu bar. **«Выключить а
 Release builds use **ad-hoc code signing**. They are not Apple Developer ID signed or notarized. Keep macOS protections enabled; see [building and signing](docs/BUILDING.md) if your deployment requires Developer ID distribution.
 
 ## Get a TOTP QR image
+
+The QR contains the secret that generates your codes. Read [Before you use it](#before-you-use-it) before you export it.
 
 VPN Keeper needs the QR containing your **TOTP setup secret**, not a screenshot of the changing 6- or 8-digit code. It accepts standard `otpauth://totp/` QR codes and Google Authenticator `otpauth-migration://` export QR codes. A backup file, recovery code, push-approval QR, or sign-in QR is not interchangeable with these formats.
 
