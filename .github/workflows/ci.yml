@@ -21,14 +21,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
+          - os: macos-15-intel
             arch: x86_64
-          - os: macos-15-arm64
+          - os: macos-15
             arch: arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     env:
       VPNKEEPER_BUILD_DIR: ${{ github.workspace }}/.build-local
+      EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -37,6 +38,7 @@ jobs:
         shell: bash
         run: |
           for script in Scripts/*.sh; do bash -n "$script"; done
+          [[ "$(uname -m)" == "$EXPECTED_ARCH" ]] || { echo "Unexpected runner architecture" >&2; exit 1; }
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             expected="v$(tr -d '\r\n' < VERSION)"
             [[ "$GITHUB_REF_NAME" == "$expected" ]] || { echo "Tag must match VERSION" >&2; exit 1; }
