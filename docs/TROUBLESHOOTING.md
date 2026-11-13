@@ -24,6 +24,10 @@ The app looks for `/opt/cisco/secureclient/bin/vpn`, then `/opt/cisco/anyconnect
 
 Choose the page containing the VPN account. Google Authenticator multi-page exports are read page by page; accounts not present on the selected image are not imported. Unsupported algorithms, HOTP, malformed entries, and ambiguous source QR parameters are rejected.
 
+## Schedule and desktop widget
+
+Settings → **Расписание** sets the working window (default 09:00–18:00, Monday–Friday). Inside it the VPN is kept connected and recovers from any network failure or gateway-ended session. Outside it the app does not connect by itself; **Подключить**, the widget button or `--connect` bring the tunnel up and keep it for the configured hold time. The widget can be hidden from the menu bar menu.
+
 ## Local command interface
 
 Commands never accept or print passwords, TOTP seeds, or current OTP values.
@@ -41,6 +45,8 @@ Commands never accept or print passwords, TOTP seeds, or current OTP values.
 - `--import-qr`: stores exactly the selected TOTP account while preserving an existing password.
 - `--set-server vpn.example.com`: fills an empty server, or validates the existing one; it refuses to replace a different stored server.
 - `--set-identity --username alice --group Employees`: fills the username and group of an existing server profile.
+- `--connect [--hold-minutes N]`: ask the running app (started in the background if needed) to connect now. Outside the work schedule the connection is kept for `N` minutes (15–1440, default from settings).
+- `--disconnect`: disconnect the tunnel and switch automatic reconnection off.
 - `--enable-login`: registers the application at its current location as a login item. Enable reconnection through the Connect button.
 
 Do not paste raw Cisco logs or diagnostic bundles into public issues. A short failure category, app/Cisco version, and a redacted description are usually enough.

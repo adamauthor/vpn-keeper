@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var window: NSWindow?
     private var subscription: AnyCancellable?
+    private var widget: DesktopWidgetController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 systemSymbolName: connected ? "lock.shield.fill" : "lock.shield", accessibilityDescription: "VPN Keeper"
             )
         }
+        widget = DesktopWidgetController(model: model)
         if !model.hasSavedCredentials || model.pendingToken != nil { showSettings() }
     }
 
@@ -78,10 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(state)
         menu.addItem(.separator())
         add("Настройки…", action: #selector(showSettings), to: menu, key: ",")
+        let mode = NSMenuItem(title: model.modeText, action: nil, keyEquivalent: "")
+        mode.isEnabled = false
+        menu.addItem(mode)
         add("Подключить и включить автоподключение", action: #selector(connect), to: menu, enabled: !model.busy)
         add("Выключить автоподключение", action: #selector(pause), to: menu, enabled: model.keepConnected)
         add("Отключить VPN", action: #selector(disconnect), to: menu, enabled: model.connected && !model.busy)
         menu.addItem(.separator())
+        add(model.widgetVisible ? "Скрыть виджет с рабочего стола" : "Показать виджет на рабочем столе",
+            action: #selector(toggleWidget), to: menu)
         add("Открыть Cisco Secure Client", action: #selector(openCisco), to: menu)
         add("Выйти из VPN Keeper", action: #selector(quit), to: menu, key: "q")
     }
@@ -115,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.start()
     }
     @objc private func pause() { model.pause() }
+    @objc private func toggleWidget() { model.setWidgetVisible(!model.widgetVisible) }
     @objc private func disconnect() { model.disconnect() }
     @objc private func openCisco() {
         let url = URL(fileURLWithPath: "/Applications/Cisco/Cisco Secure Client.app")

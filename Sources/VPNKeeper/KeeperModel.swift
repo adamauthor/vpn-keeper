@@ -17,11 +17,16 @@ final class KeeperModel: ObservableObject {
     @Published var state = "Проверка Cisco…"
     @Published var detail = ""
     @Published var diagnostic = ""
-    @Published var busy = false
+    @Published var busy = false {
+        didSet { busySince = busy ? (oldValue ? busySince : Date()) : nil }
+    }
     @Published var connected = false
     @Published var importing = false
     @Published var importPreview: QRImportResult?
     @Published var events: [String] = []
+    @Published var schedule: WorkSchedule
+    @Published var holdUntil: Date?
+    @Published var widgetVisible: Bool
 
     private let defaults = UserDefaults.standard
     private let monitor = NWPathMonitor()
@@ -43,6 +48,9 @@ final class KeeperModel: ObservableObject {
     private var lastConnectTrace: [String] = []
     private var lastFailure: String?
     private var lastAttempt: Date?
+    private var busySince: Date?
+    private var commandObserver: NSObjectProtocol?
+    var onWidgetChange: ((Bool) -> Void)?
 
     static let ciscoPaths = ["/opt/cisco/secureclient/bin/vpn", "/opt/cisco/anyconnect/bin/vpn"]
     var executable: URL? {
@@ -63,7 +71,14 @@ final class KeeperModel: ObservableObject {
         savedProfile = stored
         hasSavedCredentials = defaults.bool(forKey: "hasCredentials")
         keepConnected = defaults.bool(forKey: "keepConnected")
-        automaticBlocked = defaults.bool(forKey: "automaticBlocked")
+        // Блокировка переживает перезапуск только для ошибок входа (защита от блокировки учётки).
+        // Сетевые сбои и «Max time exceeded» её больше не ставят, а старая блокировка снимается при запуске.
+        automaticBlocked = defaults.bool(forKey: "automaticBlocked") && defaults.bool(forKey: "blockedFatal")
+        defaults.set(automaticBlocked, forKey: "automaticBlocked")
+        schedule = defaults.data(forKey: "schedule").flatMap { try? JSONDecoder().decode(WorkSchedule.self, from: $0) }
+            ?? WorkSchedule()
+        holdUntil = defaults.object(forKey: "holdUntil") as? Date
+        widgetVisible = defaults.object(forKey: "widgetVisible") as? Bool ?? true
         if defaults.bool(forKey: "hasPendingImportedToken") {
             if let entry = try? KeychainStore.load(interactive: false) {
                 pendingToken = entry.token
@@ -129,8 +144,78 @@ final class KeeperModel: ObservableObject {
         statusSubscription = objectWillChange.sink { [weak self] _ in
             Task { @MainActor in self?.publishRuntime() }
         }
+        commandObserver = DistributedNotificationCenter.default().addObserver(
+            forName: KeeperCommand.notification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let command = KeeperCommand(userInfo: note.userInfo) else { return }
+            Task { @MainActor in self?.handle(command) }
+        }
         publishRuntime()
         startupTask = Task { await diagnose() }
+    }
+
+    // ---- расписание и команды -------------------------------------------------------------------------------
+
+    /// Автоподключение работает в рабочее окно, а вне его — пока не истёк срок после ручного/пилотного включения.
+    var autoActive: Bool {
+        keepConnected && (schedule.contains(Date()) || (holdUntil.map { $0 > Date() } ?? false))
+    }
+    var inWindow: Bool { schedule.contains(Date()) }
+
+    var modeText: String {
+        guard keepConnected else { return "Авто выключено" }
+        if inWindow { return schedule.enabled ? "Авто до " + WorkSchedule.label(schedule.endMinutes) : "Авто всегда" }
+        if let hold = holdUntil, hold > Date() {
+            return "Вручную до " + DateFormatter.localizedString(from: hold, dateStyle: .none, timeStyle: .short)
+        }
+        if let next = schedule.nextStart(after: Date()) {
+            let f = DateFormatter()
+            f.dateFormat = Calendar.current.isDateInToday(next) ? "HH:mm" : "EE HH:mm"
+            return "Вне расписания · авто с " + f.string(from: next)
+        }
+        return "Вне расписания"
+    }
+
+    func saveSchedule(_ value: WorkSchedule) throws {
+        schedule = try value.validated()
+        defaults.set(try JSONEncoder().encode(schedule), forKey: "schedule")
+        nextProbe = .distantPast
+        log("Расписание: " + (schedule.enabled ? "\(WorkSchedule.label(schedule.startMinutes))–\(WorkSchedule.label(schedule.endMinutes))" : "без ограничений"))
+    }
+
+    func setWidgetVisible(_ visible: Bool) {
+        widgetVisible = visible
+        defaults.set(visible, forKey: "widgetVisible")
+        onWidgetChange?(visible)
+    }
+
+    func handle(_ command: KeeperCommand) {
+        switch command {
+        case .connect(let hold): requestConnect(holdMinutes: hold)
+        case .disconnect: disconnect()
+        }
+    }
+
+    /// Включить без окна настроек: из виджета, меню и по запросу пилота. Секреты берутся из Связки ключей.
+    func requestConnect(holdMinutes: Int? = nil) {
+        guard hasSavedCredentials, savedProfile != nil else {
+            detail = "Сначала сохраните настройки подключения."
+            return
+        }
+        setKeeping(true)
+        automaticBlocked = false
+        defaults.set(false, forKey: "automaticBlocked")
+        retry.reset()
+        retryAt = nil
+        if !schedule.contains(Date()) {
+            let minutes = holdMinutes ?? schedule.afterHoursHoldMinutes
+            let until = Date().addingTimeInterval(TimeInterval(minutes * 60))
+            holdUntil = max(until, holdUntil ?? .distantPast)
+            defaults.set(holdUntil, forKey: "holdUntil")
+        }
+        nextProbe = .distantPast
+        log("Подключение по запросу")
+        Task { await tick(force: true) }
     }
 
     private func publishRuntime() {
@@ -140,8 +225,12 @@ final class KeeperModel: ObservableObject {
             "networkAvailable": networkAvailable, "sleeping": sleeping, "locked": locked,
             "diagnosticsPassed": diagnosticsPassed, "automaticBlocked": automaticBlocked,
             "hasSavedCredentials": hasSavedCredentials, "hasSavedProfile": savedProfile != nil,
-            "connectTrace": lastConnectTrace,
+            "connectTrace": lastConnectTrace, "connected": connected, "keepConnected": keepConnected,
+            "autoActive": autoActive, "inWindow": inWindow, "mode": modeText, "scheduleEnabled": schedule.enabled,
+            "schedule": ["start": WorkSchedule.label(schedule.startMinutes), "end": WorkSchedule.label(schedule.endMinutes),
+                         "weekdays": schedule.weekdays.sorted(), "holdMinutes": schedule.afterHoursHoldMinutes],
         ]
+        if let holdUntil { status["holdUntil"] = ISO8601DateFormatter().string(from: holdUntil) }
         if let lastFailure { status["lastFailure"] = lastFailure }
         if let lastAttempt { status["lastAttempt"] = ISO8601DateFormatter().string(from: lastAttempt) }
         if let retryAt { status["retryAt"] = ISO8601DateFormatter().string(from: retryAt) }
@@ -200,6 +289,7 @@ final class KeeperModel: ObservableObject {
         retry.reset()
         retryAt = nil
         defaults.set(false, forKey: "automaticBlocked")
+        defaults.set(false, forKey: "blockedFatal")
         detail = "Настройки сохранены. Пароль и TOTP находятся в Связке ключей."
         log("Настройки сохранены")
     }
@@ -250,6 +340,12 @@ final class KeeperModel: ObservableObject {
         }
         setKeeping(true)
         automaticBlocked = false
+        defaults.set(false, forKey: "automaticBlocked")
+        defaults.set(false, forKey: "blockedFatal")
+        if !schedule.contains(Date()) {
+            holdUntil = Date().addingTimeInterval(TimeInterval(schedule.afterHoursHoldMinutes * 60))
+            defaults.set(holdUntil, forKey: "holdUntil")
+        }
         retry.reset()
         retryAt = nil
         nextProbe = .distantPast
@@ -274,6 +370,8 @@ final class KeeperModel: ObservableObject {
     func disconnect() {
         guard !busy, let executable else { return }
         pause()
+        holdUntil = nil
+        defaults.removeObject(forKey: "holdUntil")
         Task {
             busy = true
             state = "Отключение…"
@@ -298,7 +396,7 @@ final class KeeperModel: ObservableObject {
             if SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval {
                 try SMAppService.mainApp.unregister()
             }
-            ["profile", "hasCredentials", "keepConnected", "automaticBlocked", "hasPendingImportedToken"].forEach(
+            ["profile", "hasCredentials", "keepConnected", "automaticBlocked", "blockedFatal", "holdUntil", "hasPendingImportedToken"].forEach(
                 defaults.removeObject(forKey:))
             profile = VPNProfile()
             savedProfile = nil
@@ -373,23 +471,31 @@ final class KeeperModel: ObservableObject {
         guard failure != .cancelled else { return }
         lastFailure = failure.rawValue
         connected = false
-        if failure.retryable, let delay = retry.nextDelay() {
+        if failure.retryable {
+            let delay = retry.nextDelay()
             retryAt = Date().addingTimeInterval(delay)
             state = "Повтор через \(Int(delay)) сек."
             detail = failure.message
-            log("Сетевая ошибка; повтор через \(Int(delay)) сек.")
+            log("Сбой подключения (\(failure.rawValue)); повтор через \(Int(delay)) сек.")
         } else {
             automaticBlocked = true
             retryAt = nil
             defaults.set(true, forKey: "automaticBlocked")
+            defaults.set(true, forKey: "blockedFatal")
             state = "Автоподключение приостановлено"
-            detail =
-                failure.retryable ? "Лимит повторов достигнут. Проверьте сеть и нажмите «Подключить»." : failure.message
-            log(failure.retryable ? "Лимит сетевых повторов достигнут" : "Вход остановлен: требуется внимание")
+            detail = failure.message
+            log("Вход остановлен: требуется внимание")
         }
     }
 
     func tick(force: Bool = false) async {
+        // Самовосстановление: операция Cisco не должна висеть дольше собственных таймаутов (120 и 12 секунд).
+        if busy, let since = busySince, Date().timeIntervalSince(since) > 180 {
+            generation += 1
+            active?.cancel()
+            busy = false
+            log("Зависшая операция Cisco сброшена")
+        }
         guard !busy, !sleeping, !locked, networkAvailable else { return }
         guard force || Date() >= nextProbe else { return }
         nextProbe = Date().addingTimeInterval(15)
@@ -405,7 +511,7 @@ final class KeeperModel: ObservableObject {
         guard revision == generation else { return }
         switch result {
         case .failed(let failure):
-            if keepConnected && !automaticBlocked { fail(failure) } else { diagnostic = failure.message }
+            if autoActive && !automaticBlocked { fail(failure) } else { diagnostic = failure.message }
             return
         case .state(.connected):
             if !connected { log("Cisco сообщил: VPN подключён") }
@@ -423,8 +529,8 @@ final class KeeperModel: ObservableObject {
         case .state:
             connected = false
         }
-        guard keepConnected, !automaticBlocked, hasSavedCredentials, let savedProfile else {
-            if !automaticBlocked { state = "VPN отключён" }
+        guard autoActive, !automaticBlocked, hasSavedCredentials, let savedProfile else {
+            if !automaticBlocked { state = keepConnected && !inWindow ? "VPN отключён · " + modeText : "VPN отключён" }
             return
         }
         if let retryAt, retryAt > Date() {
@@ -452,7 +558,7 @@ final class KeeperModel: ObservableObject {
                     state = "Cisco устанавливает соединение…"
                     return
                 } else if current == .state(.disconnected), await CiscoGUI.releaseConnectionControl() {
-                    guard revision == generation, keepConnected, !sleeping, !locked, networkAvailable else { return }
+                    guard revision == generation, autoActive, !sleeping, !locked, networkAvailable else { return }
                     log("Закрыт графический Cisco для освобождения управления")
                     // The failed capability request sent no credentials. Retry once after normal Quit.
                     connectedResult = await execute(executable, .connect(validated, credentials))

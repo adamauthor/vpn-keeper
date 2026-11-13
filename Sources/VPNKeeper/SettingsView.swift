@@ -141,6 +141,8 @@ struct SettingsView: View {
                         Label("Автоматизация", systemImage: "arrow.triangle.2.circlepath").font(.headline)
                     }
 
+                    ScheduleBox(model: model)
+
                     DisclosureGroup("Диагностика и события") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(model.diagnostic).font(.callout).textSelection(.enabled)
@@ -222,5 +224,64 @@ struct SettingsView: View {
             Task { @MainActor in model.importQR(url) }
         }
         return true
+    }
+}
+
+struct ScheduleBox: View {
+    @ObservedObject var model: KeeperModel
+    @State private var draft = WorkSchedule()
+    @State private var message = ""
+    private static let days: [(Int, String)] = [(2, "Пн"), (3, "Вт"), (4, "Ср"), (5, "Чт"), (6, "Пт"), (7, "Сб"), (1, "Вс")]
+
+    private func time(_ minutes: Binding<Int>) -> Binding<Date> {
+        Binding(
+            get: { Calendar.current.date(bySettingHour: minutes.wrappedValue / 60, minute: minutes.wrappedValue % 60, second: 0, of: Date()) ?? Date() },
+            set: {
+                let c = Calendar.current.dateComponents([.hour, .minute], from: $0)
+                minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+            })
+    }
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Держать VPN только в рабочее время", isOn: $draft.enabled)
+                if draft.enabled {
+                    HStack(spacing: 8) {
+                        DatePicker("С", selection: time($draft.startMinutes), displayedComponents: .hourAndMinute)
+                            .labelsHidden().frame(width: 90)
+                        Text("до")
+                        DatePicker("До", selection: time($draft.endMinutes), displayedComponents: .hourAndMinute)
+                            .labelsHidden().frame(width: 90)
+                        Spacer()
+                    }
+                    HStack(spacing: 6) {
+                        ForEach(Self.days, id: \.0) { day, name in
+                            Toggle(name, isOn: Binding(
+                                get: { draft.weekdays.contains(day) },
+                                set: { if $0 { draft.weekdays.insert(day) } else { draft.weekdays.remove(day) } }))
+                                .toggleStyle(.button)
+                        }
+                    }
+                    Stepper(value: $draft.afterHoursHoldMinutes, in: 15...1440, step: 30) {
+                        Text("После ручного включения или запроса пилота держать \(draft.afterHoursHoldMinutes / 60) ч \(draft.afterHoursHoldMinutes % 60) мин")
+                    }
+                }
+                Text("В рабочее окно VPN подключается и восстанавливается сам, без остановки. Вне окна сам не поднимается: только по кнопке, из виджета или по запросу пилота, и затем держится заданное время. Текущее время: \(model.modeText).")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle("Показывать виджет на рабочем столе", isOn: Binding(
+                    get: { model.widgetVisible }, set: { model.setWidgetVisible($0) }))
+                HStack {
+                    Button("Применить расписание") {
+                        do { try model.saveSchedule(draft); draft = model.schedule; message = "Расписание сохранено." }
+                        catch { message = error.localizedDescription }
+                    }
+                    if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+                }
+            }.padding(12)
+        } label: {
+            Label("Расписание", systemImage: "clock").font(.headline)
+        }
+        .onAppear { draft = model.schedule }
     }
 }

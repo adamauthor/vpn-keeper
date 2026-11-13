@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ServiceManagement
 import VPNCore
@@ -17,6 +18,20 @@ enum CommandInterface {
                 return
             }
             try output(runtime)
+        case "--connect", "--disconnect":
+            // Команда уходит в запущенное приложение; если оно закрыто — запускается в фоне.
+            var hold: Int?
+            if command == "--connect", arguments.count == 3, arguments[1] == "--hold-minutes" {
+                guard let minutes = Int(arguments[2]), (15...1440).contains(minutes) else {
+                    throw KeeperError("Срок удержания — от 15 до 1440 минут.")
+                }
+                hold = minutes
+            } else {
+                guard arguments.count == 1 else { throw KeeperError("Неизвестные параметры команды.") }
+            }
+            let request: KeeperCommand = command == "--connect" ? .connect(holdMinutes: hold) : .disconnect
+            try send(request)
+            try output(["sent": true, "action": command == "--connect" ? "connect" : "disconnect"])
         case "--inspect-qr":
             guard arguments.count == 2 else { throw KeeperError("Укажите путь к изображению QR.") }
             let result = try QRImport.readAccounts(URL(fileURLWithPath: arguments[1]))
@@ -105,6 +120,29 @@ enum CommandInterface {
             ])
         default: throw KeeperError("Неизвестная команда локального интерфейса.")
         }
+    }
+
+    /// Приложение отвечает на распределённое уведомление; запускаем его, если оно не работает.
+    @MainActor static func send(_ command: KeeperCommand) throws {
+        let id = "kz.local.VPNKeeper"
+        if NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty {
+            let open = Process()
+            open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            open.arguments = ["-g", Bundle.main.bundleURL.path]
+            try open.run()
+            open.waitUntilExit()
+            var waited = 0.0
+            while NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty, waited < 15 {
+                Thread.sleep(forTimeInterval: 0.5)
+                waited += 0.5
+            }
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty else {
+                throw KeeperError("VPN Keeper не запустился.")
+            }
+            Thread.sleep(forTimeInterval: 2)   // дать приложению подписаться на команды
+        }
+        DistributedNotificationCenter.default().postNotificationName(
+            KeeperCommand.notification, object: nil, userInfo: command.userInfo, deliverImmediately: true)
     }
 
     static func output(_ value: [String: Any]) throws {

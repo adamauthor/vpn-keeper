@@ -78,7 +78,8 @@ struct ConversationTests {
         let message =
             "Connect capability is unavailable. Another Cisco Secure Client application acquired it. Terminating the other application and restarting this application may resolve this issue."
         checkEqual(CLIText.failure(message), .clientBusy)
-        checkFalse(VPNFailure.clientBusy.retryable)
+        checkTrue(VPNFailure.clientBusy.retryable)
+        checkTrue(VPNFailure.service.retryable)
     }
 
     @Test func testZeroBasedGroupAndTTYWarning() {
@@ -109,7 +110,8 @@ struct ConversationTests {
         checkEqual(r.nextDelay(), 30)
         checkEqual(r.nextDelay(), 60)
         checkEqual(r.nextDelay(), 120)
-        checkNil(r.nextDelay())
+        checkEqual(r.nextDelay(), 300)
+        checkEqual(r.nextDelay(), 300)
         r.reset()
         checkEqual(r.nextDelay(), 30)
         checkFalse(VPNFailure.authentication.retryable)
