@@ -12,6 +12,9 @@ Changes follow [Semantic Versioning](https://semver.org/).
 - `--connect [--hold-minutes N]` and `--disconnect` local commands (the app is started in the background if needed);
   `--runtime-status` now reports `connected`, `keepConnected`, `autoActive`, `inWindow`, `mode`, `schedule`, `holdUntil`.
 
+### Changed
+- With a schedule, **Disconnect** pauses automatic reconnection only until the end of the current working window; the next window starts it again by itself.
+
 ### Fixed
 - A network failure or a gateway-ended session ("Max time exceeded") no longer switches automatic reconnection off for
   good: retries continue with 30 / 60 / 120 / 300 second pauses until the tunnel is back. Only login failures stop

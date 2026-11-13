@@ -26,6 +26,8 @@ final class KeeperModel: ObservableObject {
     @Published var events: [String] = []
     @Published var schedule: WorkSchedule
     @Published var holdUntil: Date?
+    /// Ручное «Отключить» в рабочее время: до конца окна VPN не поднимается, а завтра автоподключение само вернётся.
+    @Published var pausedUntil: Date?
     @Published var widgetVisible: Bool
 
     private let defaults = UserDefaults.standard
@@ -78,6 +80,7 @@ final class KeeperModel: ObservableObject {
         schedule = defaults.data(forKey: "schedule").flatMap { try? JSONDecoder().decode(WorkSchedule.self, from: $0) }
             ?? WorkSchedule()
         holdUntil = defaults.object(forKey: "holdUntil") as? Date
+        pausedUntil = defaults.object(forKey: "pausedUntil") as? Date
         widgetVisible = defaults.object(forKey: "widgetVisible") as? Bool ?? true
         if defaults.bool(forKey: "hasPendingImportedToken") {
             if let entry = try? KeychainStore.load(interactive: false) {
@@ -158,12 +161,16 @@ final class KeeperModel: ObservableObject {
 
     /// Автоподключение работает в рабочее окно, а вне его — пока не истёк срок после ручного/пилотного включения.
     var autoActive: Bool {
-        keepConnected && (schedule.contains(Date()) || (holdUntil.map { $0 > Date() } ?? false))
+        keepConnected && !(pausedUntil.map { $0 > Date() } ?? false)
+            && (schedule.contains(Date()) || (holdUntil.map { $0 > Date() } ?? false))
     }
     var inWindow: Bool { schedule.contains(Date()) }
 
     var modeText: String {
         guard keepConnected else { return "Авто выключено" }
+        if let paused = pausedUntil, paused > Date() {
+            return "Пауза до " + DateFormatter.localizedString(from: paused, dateStyle: .none, timeStyle: .short)
+        }
         if inWindow { return schedule.enabled ? "Авто до " + WorkSchedule.label(schedule.endMinutes) : "Авто всегда" }
         if let hold = holdUntil, hold > Date() {
             return "Вручную до " + DateFormatter.localizedString(from: hold, dateStyle: .none, timeStyle: .short)
@@ -181,6 +188,17 @@ final class KeeperModel: ObservableObject {
         defaults.set(try JSONEncoder().encode(schedule), forKey: "schedule")
         nextProbe = .distantPast
         log("Расписание: " + (schedule.enabled ? "\(WorkSchedule.label(schedule.startMinutes))–\(WorkSchedule.label(schedule.endMinutes))" : "без ограничений"))
+    }
+
+    private func clearPause() {
+        pausedUntil = nil
+        defaults.removeObject(forKey: "pausedUntil")
+    }
+
+    /// Конец сегодняшнего рабочего окна.
+    private var windowEnd: Date? {
+        Calendar.current.date(
+            bySettingHour: schedule.endMinutes / 60, minute: schedule.endMinutes % 60, second: 0, of: Date())
     }
 
     func setWidgetVisible(_ visible: Bool) {
@@ -203,6 +221,7 @@ final class KeeperModel: ObservableObject {
             return
         }
         setKeeping(true)
+        clearPause()
         automaticBlocked = false
         defaults.set(false, forKey: "automaticBlocked")
         retry.reset()
@@ -226,7 +245,7 @@ final class KeeperModel: ObservableObject {
             "diagnosticsPassed": diagnosticsPassed, "automaticBlocked": automaticBlocked,
             "hasSavedCredentials": hasSavedCredentials, "hasSavedProfile": savedProfile != nil,
             "connectTrace": lastConnectTrace, "connected": connected, "keepConnected": keepConnected,
-            "autoActive": autoActive, "inWindow": inWindow, "mode": modeText, "scheduleEnabled": schedule.enabled,
+            "autoActive": autoActive, "paused": (pausedUntil.map { $0 > Date() } ?? false), "inWindow": inWindow, "mode": modeText, "scheduleEnabled": schedule.enabled,
             "schedule": ["start": WorkSchedule.label(schedule.startMinutes), "end": WorkSchedule.label(schedule.endMinutes),
                          "weekdays": schedule.weekdays.sorted(), "holdMinutes": schedule.afterHoursHoldMinutes],
         ]
@@ -339,6 +358,7 @@ final class KeeperModel: ObservableObject {
             return
         }
         setKeeping(true)
+        clearPause()
         automaticBlocked = false
         defaults.set(false, forKey: "automaticBlocked")
         defaults.set(false, forKey: "blockedFatal")
@@ -369,7 +389,17 @@ final class KeeperModel: ObservableObject {
 
     func disconnect() {
         guard !busy, let executable else { return }
-        pause()
+        // С расписанием отключение действует до конца окна (завтра авто вернётся); без расписания — как раньше.
+        if schedule.enabled {
+            generation += 1
+            active?.cancel()
+            retryAt = nil
+            pausedUntil = inWindow ? windowEnd : nil
+            if let pausedUntil { defaults.set(pausedUntil, forKey: "pausedUntil") } else { clearPause() }
+            log("Автоподключение приостановлено: " + modeText)
+        } else {
+            pause()
+        }
         holdUntil = nil
         defaults.removeObject(forKey: "holdUntil")
         Task {
@@ -380,7 +410,7 @@ final class KeeperModel: ObservableObject {
             if result == .state(.disconnected) {
                 connected = false
                 state = "VPN отключён"
-                detail = "Автоподключение выключено."
+                detail = schedule.enabled ? "Автоподключение вернётся в следующее рабочее окно." : "Автоподключение выключено."
                 log("VPN отключён пользователем")
             } else if case .failed(let failure) = result {
                 detail = failure.message
@@ -396,7 +426,7 @@ final class KeeperModel: ObservableObject {
             if SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval {
                 try SMAppService.mainApp.unregister()
             }
-            ["profile", "hasCredentials", "keepConnected", "automaticBlocked", "blockedFatal", "holdUntil", "hasPendingImportedToken"].forEach(
+            ["profile", "hasCredentials", "keepConnected", "automaticBlocked", "blockedFatal", "holdUntil", "pausedUntil", "hasPendingImportedToken"].forEach(
                 defaults.removeObject(forKey:))
             profile = VPNProfile()
             savedProfile = nil
