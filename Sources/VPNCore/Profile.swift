@@ -88,10 +88,10 @@ public struct RetryPolicy {
     public private(set) var failures = 0
     public init() {}
     public mutating func reset() { failures = 0 }
-    /// Network errors only. Authentication, certificate and unknown prompts stop immediately.
-    public mutating func nextDelay() -> TimeInterval? {
+    /// Паузы растут 30 → 60 → 120 → 300 секунд и дальше остаются пятью минутами: сетевой сбой не должен навсегда
+    /// выключать автоподключение. Ошибки входа сюда не попадают — они останавливают повторы сразу.
+    public mutating func nextDelay() -> TimeInterval {
         failures += 1
-        guard failures <= 3 else { return nil }
-        return [30.0, 60.0, 120.0][failures - 1]
+        return [30.0, 60.0, 120.0, 300.0][min(failures, 4) - 1]
     }
 }

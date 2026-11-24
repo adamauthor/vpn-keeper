@@ -26,7 +26,7 @@ public enum VPNFailure: String, Error, Equatable {
         case .cancelled: return "Операция остановлена."
         }
     }
-    public var retryable: Bool { self == .network || self == .timeout }
+    public var retryable: Bool { self == .network || self == .timeout || self == .service || self == .clientBusy }
 }
 
 public enum VPNState: Equatable { case connected, disconnected, connecting, reconnecting, unknown }
