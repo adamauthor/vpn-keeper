@@ -77,7 +77,8 @@ final class KeeperModel: ObservableObject {
         // Сетевые сбои и «Max time exceeded» её больше не ставят, а старая блокировка снимается при запуске.
         automaticBlocked = defaults.bool(forKey: "automaticBlocked") && defaults.bool(forKey: "blockedFatal")
         defaults.set(automaticBlocked, forKey: "automaticBlocked")
-        schedule = defaults.data(forKey: "schedule").flatMap { try? JSONDecoder().decode(WorkSchedule.self, from: $0) }
+        schedule =
+            defaults.data(forKey: "schedule").flatMap { try? JSONDecoder().decode(WorkSchedule.self, from: $0) }
             ?? WorkSchedule()
         holdUntil = defaults.object(forKey: "holdUntil") as? Date
         pausedUntil = defaults.object(forKey: "pausedUntil") as? Date
@@ -186,8 +187,21 @@ final class KeeperModel: ObservableObject {
     func saveSchedule(_ value: WorkSchedule) throws {
         schedule = try value.validated()
         defaults.set(try JSONEncoder().encode(schedule), forKey: "schedule")
+        // Пауза после «Отключить» привязана к концу окна: при смене расписания переносим её на новый конец.
+        if let paused = pausedUntil, paused > Date() {
+            if schedule.enabled, inWindow, let windowEnd {
+                pausedUntil = windowEnd
+                defaults.set(windowEnd, forKey: "pausedUntil")
+            } else {
+                clearPause()
+            }
+        }
         nextProbe = .distantPast
-        log("Расписание: " + (schedule.enabled ? "\(WorkSchedule.label(schedule.startMinutes))–\(WorkSchedule.label(schedule.endMinutes))" : "без ограничений"))
+        log(
+            "Расписание: "
+                + (schedule.enabled
+                    ? "\(WorkSchedule.label(schedule.startMinutes))–\(WorkSchedule.label(schedule.endMinutes))"
+                    : "без ограничений"))
     }
 
     private func clearPause() {
@@ -245,9 +259,12 @@ final class KeeperModel: ObservableObject {
             "diagnosticsPassed": diagnosticsPassed, "automaticBlocked": automaticBlocked,
             "hasSavedCredentials": hasSavedCredentials, "hasSavedProfile": savedProfile != nil,
             "connectTrace": lastConnectTrace, "connected": connected, "keepConnected": keepConnected,
-            "autoActive": autoActive, "paused": (pausedUntil.map { $0 > Date() } ?? false), "inWindow": inWindow, "mode": modeText, "scheduleEnabled": schedule.enabled,
-            "schedule": ["start": WorkSchedule.label(schedule.startMinutes), "end": WorkSchedule.label(schedule.endMinutes),
-                         "weekdays": schedule.weekdays.sorted(), "holdMinutes": schedule.afterHoursHoldMinutes],
+            "autoActive": autoActive, "paused": (pausedUntil.map { $0 > Date() } ?? false), "inWindow": inWindow,
+            "mode": modeText, "scheduleEnabled": schedule.enabled,
+            "schedule": [
+                "start": WorkSchedule.label(schedule.startMinutes), "end": WorkSchedule.label(schedule.endMinutes),
+                "weekdays": schedule.weekdays.sorted(), "holdMinutes": schedule.afterHoursHoldMinutes,
+            ],
         ]
         if let holdUntil { status["holdUntil"] = ISO8601DateFormatter().string(from: holdUntil) }
         if let lastFailure { status["lastFailure"] = lastFailure }
@@ -410,7 +427,9 @@ final class KeeperModel: ObservableObject {
             if result == .state(.disconnected) {
                 connected = false
                 state = "VPN отключён"
-                detail = schedule.enabled ? "Автоподключение вернётся в следующее рабочее окно." : "Автоподключение выключено."
+                detail =
+                    schedule.enabled
+                    ? "Автоподключение вернётся в следующее рабочее окно." : "Автоподключение выключено."
                 log("VPN отключён пользователем")
             } else if case .failed(let failure) = result {
                 detail = failure.message
@@ -426,7 +445,10 @@ final class KeeperModel: ObservableObject {
             if SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval {
                 try SMAppService.mainApp.unregister()
             }
-            ["profile", "hasCredentials", "keepConnected", "automaticBlocked", "blockedFatal", "holdUntil", "pausedUntil", "hasPendingImportedToken"].forEach(
+            [
+                "profile", "hasCredentials", "keepConnected", "automaticBlocked", "blockedFatal", "holdUntil",
+                "pausedUntil", "hasPendingImportedToken",
+            ].forEach(
                 defaults.removeObject(forKey:))
             profile = VPNProfile()
             savedProfile = nil

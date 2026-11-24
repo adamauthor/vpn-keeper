@@ -87,7 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add("Выключить автоподключение", action: #selector(pause), to: menu, enabled: model.keepConnected)
         add("Отключить VPN", action: #selector(disconnect), to: menu, enabled: model.connected && !model.busy)
         menu.addItem(.separator())
-        add(model.widgetVisible ? "Скрыть виджет с рабочего стола" : "Показать виджет на рабочем столе",
+        add(
+            model.widgetVisible ? "Скрыть виджет с рабочего стола" : "Показать виджет на рабочем столе",
             action: #selector(toggleWidget), to: menu)
         add("Открыть Cisco Secure Client", action: #selector(openCisco), to: menu)
         add("Выйти из VPN Keeper", action: #selector(quit), to: menu, key: "q")

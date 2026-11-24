@@ -2,7 +2,7 @@
 
 Changes follow [Semantic Versioning](https://semver.org/).
 
-## [1.2.0] - 2026-11-13
+## [1.2.0] - 2026-11-24
 
 ### Added
 - Work schedule (default 09:00–18:00, Mon–Fri, editable): inside the window the VPN is kept up without stopping;
@@ -16,6 +16,8 @@ Changes follow [Semantic Versioning](https://semver.org/).
 - With a schedule, **Disconnect** pauses automatic reconnection only until the end of the current working window; the next window starts it again by itself.
 
 ### Fixed
+- Schedule changes apply immediately (no separate Apply button), and a pause after **Disconnect** moves to the new end
+  of the working window, so the widget no longer keeps showing the old time.
 - A network failure or a gateway-ended session ("Max time exceeded") no longer switches automatic reconnection off for
   good: retries continue with 30 / 60 / 120 / 300 second pauses until the tunnel is back. Only login failures stop
   retries, and a stale block from an older version is cleared on launch.

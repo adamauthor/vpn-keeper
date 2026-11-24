@@ -231,11 +231,17 @@ struct ScheduleBox: View {
     @ObservedObject var model: KeeperModel
     @State private var draft = WorkSchedule()
     @State private var message = ""
-    private static let days: [(Int, String)] = [(2, "Пн"), (3, "Вт"), (4, "Ср"), (5, "Чт"), (6, "Пт"), (7, "Сб"), (1, "Вс")]
+    private static let days: [(Int, String)] = [
+        (2, "Пн"), (3, "Вт"), (4, "Ср"), (5, "Чт"), (6, "Пт"), (7, "Сб"), (1, "Вс"),
+    ]
 
     private func time(_ minutes: Binding<Int>) -> Binding<Date> {
         Binding(
-            get: { Calendar.current.date(bySettingHour: minutes.wrappedValue / 60, minute: minutes.wrappedValue % 60, second: 0, of: Date()) ?? Date() },
+            get: {
+                Calendar.current.date(
+                    bySettingHour: minutes.wrappedValue / 60, minute: minutes.wrappedValue % 60, second: 0, of: Date())
+                    ?? Date()
+            },
             set: {
                 let c = Calendar.current.dateComponents([.hour, .minute], from: $0)
                 minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0)
@@ -257,31 +263,47 @@ struct ScheduleBox: View {
                     }
                     HStack(spacing: 6) {
                         ForEach(Self.days, id: \.0) { day, name in
-                            Toggle(name, isOn: Binding(
-                                get: { draft.weekdays.contains(day) },
-                                set: { if $0 { draft.weekdays.insert(day) } else { draft.weekdays.remove(day) } }))
-                                .toggleStyle(.button)
+                            Toggle(
+                                name,
+                                isOn: Binding(
+                                    get: { draft.weekdays.contains(day) },
+                                    set: { if $0 { draft.weekdays.insert(day) } else { draft.weekdays.remove(day) } })
+                            )
+                            .toggleStyle(.button)
                         }
                     }
                     Stepper(value: $draft.afterHoursHoldMinutes, in: 15...1440, step: 30) {
-                        Text("После ручного включения или запроса пилота держать \(draft.afterHoursHoldMinutes / 60) ч \(draft.afterHoursHoldMinutes % 60) мин")
+                        Text(
+                            "После ручного включения или запроса пилота держать \(draft.afterHoursHoldMinutes / 60) ч \(draft.afterHoursHoldMinutes % 60) мин"
+                        )
                     }
                 }
-                Text("В рабочее окно VPN подключается и восстанавливается сам, без остановки. Вне окна сам не поднимается: только по кнопке, из виджета или по запросу пилота, и затем держится заданное время. Текущее время: \(model.modeText).")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Toggle("Показывать виджет на рабочем столе", isOn: Binding(
-                    get: { model.widgetVisible }, set: { model.setWidgetVisible($0) }))
-                HStack {
-                    Button("Применить расписание") {
-                        do { try model.saveSchedule(draft); draft = model.schedule; message = "Расписание сохранено." }
-                        catch { message = error.localizedDescription }
-                    }
-                    if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
-                }
+                Text(
+                    "В рабочее окно VPN подключается и восстанавливается сам, без остановки. Вне окна сам не поднимается: только по кнопке, из виджета или по запросу пилота, и затем держится заданное время. Текущее время: \(model.modeText)."
+                )
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle(
+                    "Показывать виджет на рабочем столе",
+                    isOn: Binding(
+                        get: { model.widgetVisible }, set: { model.setWidgetVisible($0) }))
+                if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
             }.padding(12)
         } label: {
             Label("Расписание", systemImage: "clock").font(.headline)
         }
-        .onAppear { draft = model.schedule }
+        .onAppear {
+            draft = model.schedule
+            message = ""
+        }
+        // Расписание применяется сразу при изменении: отдельной кнопки нет, виджет и пауза обновляются тут же.
+        .onChange(of: draft) { value in
+            guard value != model.schedule else { return }
+            do {
+                try model.saveSchedule(value)
+                message = "Расписание сохранено."
+            } catch {
+                message = error.localizedDescription
+            }
+        }
     }
 }

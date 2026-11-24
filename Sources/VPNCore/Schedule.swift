@@ -20,7 +20,8 @@ public struct WorkSchedule: Codable, Equatable {
         startMinutes = try c.decodeIfPresent(Int.self, forKey: .startMinutes) ?? base.startMinutes
         endMinutes = try c.decodeIfPresent(Int.self, forKey: .endMinutes) ?? base.endMinutes
         weekdays = try c.decodeIfPresent(Set<Int>.self, forKey: .weekdays) ?? base.weekdays
-        afterHoursHoldMinutes = try c.decodeIfPresent(Int.self, forKey: .afterHoursHoldMinutes) ?? base.afterHoursHoldMinutes
+        afterHoursHoldMinutes =
+            try c.decodeIfPresent(Int.self, forKey: .afterHoursHoldMinutes) ?? base.afterHoursHoldMinutes
     }
 
     public func validated() throws -> WorkSchedule {

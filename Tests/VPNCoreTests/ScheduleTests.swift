@@ -17,7 +17,7 @@ struct ScheduleTests {
 
     @Test func testDefaultsAreNineToSixOnWeekdays() {
         let s = WorkSchedule()
-        checkTrue(s.contains(date("2026-11-13T09:00:00+05:00"), calendar: calendar))   // пятница
+        checkTrue(s.contains(date("2026-11-13T09:00:00+05:00"), calendar: calendar))  // пятница
         checkTrue(s.contains(date("2026-11-13T17:59:00+05:00"), calendar: calendar))
         checkFalse(s.contains(date("2026-11-13T18:00:00+05:00"), calendar: calendar))
         checkFalse(s.contains(date("2026-11-13T08:59:00+05:00"), calendar: calendar))
@@ -35,7 +35,9 @@ struct ScheduleTests {
         let s = WorkSchedule()
         let next = s.nextStart(after: date("2026-11-13T19:00:00+05:00"), calendar: calendar)
         checkEqual(next, date("2026-11-16T09:00:00+05:00"))
-        checkEqual(s.nextStart(after: date("2026-11-13T07:00:00+05:00"), calendar: calendar), date("2026-11-13T09:00:00+05:00"))
+        checkEqual(
+            s.nextStart(after: date("2026-11-13T07:00:00+05:00"), calendar: calendar), date("2026-11-13T09:00:00+05:00")
+        )
     }
 
     @Test func testValidationAndCodableDefaults() throws {

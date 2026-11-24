@@ -139,7 +139,7 @@ enum CommandInterface {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty else {
                 throw KeeperError("VPN Keeper не запустился.")
             }
-            Thread.sleep(forTimeInterval: 2)   // дать приложению подписаться на команды
+            Thread.sleep(forTimeInterval: 2)  // дать приложению подписаться на команды
         }
         DistributedNotificationCenter.default().postNotificationName(
             KeeperCommand.notification, object: nil, userInfo: command.userInfo, deliverImmediately: true)
