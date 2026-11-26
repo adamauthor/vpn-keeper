@@ -2,7 +2,7 @@
 
 Changes follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.1] - 2026-11-27
 
 ### Fixed
 - The desktop widget can be dragged anywhere and remembers its corner on the monitor it was placed on.
