@@ -2,6 +2,13 @@
 
 Changes follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The desktop widget can be dragged anywhere and remembers its corner on the monitor it was placed on.
+- Connecting or disconnecting a monitor no longer leaves the widget stranded in the middle of another screen: it
+  returns to its monitor, or to the main screen while that monitor is away, and always stays fully visible.
+
 ## [1.2.0] - 2026-11-24
 
 ### Added
